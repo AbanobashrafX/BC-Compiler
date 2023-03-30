@@ -6,6 +6,10 @@ class Parser:
     def __init__(self, lexer):
         self.lexer = lexer
 
+        self.symbols = set()            # Variables declared so far.
+        self.labelsDeclared = set()     # Labels declared so far.
+        self.labelsGoto = set()         # Labels gotonext so far.
+
         # Call nextToken() twice to initialize current and peek.
         self.currentToken = None
         self.peekToken = None
@@ -63,7 +67,7 @@ class Parser:
 
             self.match(TokenType.ENDIF)
 
-        # "WHILE" comparison "REPEAT" {statement} "ENDWHILE"
+        # "WHILE" comparison "REPEAT" {statement} "END-WHILE"
         elif self.checkToken(TokenType.WHILE):
             print("[+] WHILE STATEMENT")
             self.nextToken()
@@ -77,22 +81,35 @@ class Parser:
                 self.statement()
 
             self.match(TokenType.ENDWHILE)
-            # "LABEL" ident
+
+        # "LABEL" ident
         elif self.checkToken(TokenType.LABEL):
             print("[+] LABEL STATEMENT")
             self.nextToken()
+
+            # Make sure this label doesn't already exist.
+            if self.currentToken.text in self.labelsDeclared:
+                self.abort("Label already exists: " + self.currentToken.text)
+            self.labelsDeclared.add(self.currentToken.text)
+
             self.match(TokenType.IDENT)
 
         # "GOTO" ident
         elif self.checkToken(TokenType.GOTO):
             print("[+] GOTO STATEMENT")
             self.nextToken()
+            self.labelsGoto.add(self.currentToken.text)
             self.match(TokenType.IDENT)
 
         # "LET" ident "=" expression
         elif self.checkToken(TokenType.LET):
             print("[+] LET STATEMENT")
             self.nextToken()
+
+            #  Check if ident exists in symbol table. If not, declare it.
+            if self.currentToken.text not in self.symbols:
+                self.symbols.add(self.currentToken.text)
+
             self.match(TokenType.IDENT)
             self.match(TokenType.EQ)
             self.expression()
@@ -101,6 +118,11 @@ class Parser:
         elif self.checkToken(TokenType.INPUT):
             print("[+] INPUT STATEMENT")
             self.nextToken()
+
+            # If variable doesn't already exist, declare it.
+            if self.currentToken.text not in self.symbols:
+                self.symbols.add(self.currentToken.text)
+
             self.match(TokenType.IDENT)
 
         # This is not a valid statement. Error!
@@ -109,6 +131,64 @@ class Parser:
 
         # Newline.
         self.nl()
+
+    def isComparisonOperator(self):
+        # Return true if the current token is a comparison operator.
+        operators = [TokenType.GT, TokenType.GTEQ, TokenType.LT, TokenType.LTEQ, TokenType.EQEQ, TokenType.NOTEQ]
+        return any(self.checkToken(op) for op in operators)
+
+    def primary(self):
+        print("[+] PRIMARY (" + self.currentToken.text + ")")
+
+        if self.checkToken(TokenType.NUMBER):
+            self.nextToken()
+        elif self.checkToken(TokenType.IDENT):
+            # Ensure the variable already exists.
+            if self.currentToken.text not in self.symbols:
+                self.abort("Referencing variable before assignment: " + self.currentToken.text)
+            self.nextToken()
+        else:
+            self.abort("Unexpected token at " + self.currentToken.text)     # Error!
+
+    def unary(self):
+        print("[+] UNARY")
+
+        # Optional unary +/-
+        if self.checkToken(TokenType.PLUS) or self.checkToken(TokenType.MINUS):
+            self.nextToken()
+        self.primary()
+
+    def term(self):
+        print("[+] TERM")
+
+        self.unary()
+        while self.checkToken(TokenType.ASTERISK) or self.checkToken(TokenType.SLASH):
+            self.nextToken()
+            self.unary()
+
+    def expression(self):
+        print("[+] EXPRESSION")
+
+        self.term()
+        while self.checkToken(TokenType.PLUS) or self.checkToken(TokenType.MINUS):
+            self.nextToken()
+            self.term()
+
+    def comparison(self):
+        print("[+] COMPARISON")
+
+        self.expression()
+        # Must be at least one comparison operator and another expression.
+        if self.isComparisonOperator():
+            self.nextToken()
+            self.expression()
+        else:
+            self.abort("Expected comparison operator at: " + self.currentToken.text)
+
+        # Can have 0 or more comparison operator and expressions.
+        while self.isComparisonOperator():
+            self.nextToken()
+            self.expression()
 
     def nl(self):
         print("[+] NEWLINE")
@@ -121,6 +201,15 @@ class Parser:
 
     def program(self):
         print("=== PROGRAM ===")
+        # Parse and skip all the newlines in the beginning of the program.
+        while self.checkToken(TokenType.NEWLINE):
+            self.nextToken()
+
         # Parse all the statements in the program.
         while not self.checkToken(TokenType.EOF):
             self.statement()
+
+        # Check that each label referenced in a GOTO is declared.
+        for label in self.labelsGoto:
+            if label not in self.labelsDeclared:
+                self.abort("Attempting to GOTO to undeclared label: " + label)

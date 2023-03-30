@@ -44,9 +44,11 @@ class Compiler:
     def test_parsing():
         print("=== Parser  ===")
 
-        if len(sys.argv) != 2:
-            sys.exit("Error: compiler needs source file as argument.")
-        with open(sys.argv[1], "r") as codeFile:
+        # if len(sys.argv) != 2:
+        #     sys.exit("Error: compiler needs source file as argument.")
+        # with open(sys.argv[1], "r") as codeFile:
+        #     source = codeFile.read()
+        with open('example/hello.code', "r") as codeFile:
             source = codeFile.read()
 
         # Initialize the lexer and parser.
